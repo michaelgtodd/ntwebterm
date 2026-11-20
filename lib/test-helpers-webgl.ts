@@ -111,6 +111,23 @@ export class StubWebGL2 {
   deleteTexture(t: unknown) {
     this.calls.push({ method: 'deleteTexture', args: [t] });
   }
+  private contextLost = false;
+  isContextLost() {
+    return this.contextLost;
+  }
+  getExtension(name: string) {
+    this.calls.push({ method: 'getExtension', args: [name] });
+    if (name !== 'WEBGL_lose_context') return null;
+    return {
+      loseContext: () => {
+        this.calls.push({ method: 'loseContext', args: [] });
+        this.contextLost = true;
+      },
+      restoreContext: () => {
+        this.contextLost = false;
+      },
+    };
+  }
   getUniformLocation(_p: unknown, name: string) {
     this.calls.push({ method: 'getUniformLocation', args: [_p, name] });
     return this.newId();
