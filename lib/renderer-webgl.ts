@@ -1174,9 +1174,14 @@ export class WebGL2Renderer implements Renderer {
     if (this.textProgram) this.gl.deleteProgram(this.textProgram);
     if (this.cursorProgram) this.gl.deleteProgram(this.cursorProgram);
     if (this.vao) this.gl.deleteVertexArray(this.vao);
-    // The WebGL context itself isn't explicitly deletable; it dies when the
-    // canvas is GC'd. Our renderer-swap path detaches the canvas so GC can
-    // reclaim it.
+    // Release the context now instead of waiting for the canvas to be GC'd.
+    // Browsers cap live WebGL contexts per page (~16 in Chrome), so pages that
+    // create and dispose many terminals (tiled panes, tabs) otherwise evict
+    // the oldest *live* terminals' contexts. The webglcontextlost this fires
+    // is ignored because `destroyed` is already set.
+    if (!this.gl.isContextLost()) {
+      this.gl.getExtension('WEBGL_lose_context')?.loseContext();
+    }
   }
 
   /** Register a callback fired on webglcontextlost. */

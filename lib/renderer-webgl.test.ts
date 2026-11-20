@@ -166,6 +166,26 @@ describe('WebGL2Renderer', () => {
         HTMLCanvasElement.prototype.getContext = original;
       }
     });
+
+    test('destroy() releases the WebGL context without firing context-lost listeners', async () => {
+      const canvas = document.createElement('canvas');
+      const r = await WebGL2Renderer.create(canvas, {});
+      const stub = getStub();
+      let lostFired = 0;
+      r.onContextLost(() => lostFired++);
+
+      r.destroy();
+      expect(stub.countCalls('loseContext')).toBe(1);
+      expect(stub.isContextLost()).toBe(true);
+      // What the browser does after loseContext(): a destroyed renderer must
+      // not ask the terminal to fall back to another renderer.
+      canvas.dispatchEvent(new Event('webglcontextlost', { cancelable: true }));
+      expect(lostFired).toBe(0);
+
+      // A second destroy() on an already-lost context is a no-op for the context.
+      r.destroy();
+      expect(stub.countCalls('loseContext')).toBe(1);
+    });
   });
 
   describe('encodeCells', () => {
