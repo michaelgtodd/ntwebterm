@@ -1282,6 +1282,55 @@ describe('InputHandler', () => {
       wasmTerm.free();
     });
 
+    test('does not report a keyup for a key the custom key handler consumed', () => {
+      const wasmTerm = ghostty.createTerminal(80, 24);
+      // DISAMBIGUATE (1) | REPORT_EVENTS (2) | REPORT_ALL (8) = 11
+      wasmTerm.write('\x1b[>11u');
+
+      // Consume Alt+Shift+R, as an embedding app binding "split pane" would.
+      // (The handler is only invoked for keydown.)
+      const customHandler = (e: KeyboardEvent) => e.code === 'KeyR' && e.altKey && e.shiftKey;
+
+      const handler = new InputHandler(
+        ghostty,
+        container as any,
+        (data) => dataReceived.push(data),
+        () => {},
+        undefined,
+        customHandler,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        () => wasmTerm
+      );
+
+      simulateKey(container, createKeyEvent('KeyR', 'R', { alt: true, shift: true }));
+      const consumedUp = new KeyboardEvent('keyup', {
+        code: 'KeyR',
+        key: 'R',
+        altKey: true,
+        shiftKey: true,
+        bubbles: true,
+        cancelable: true,
+      });
+      container.dispatchEvent(consumedUp);
+
+      expect(dataReceived).toEqual([]);
+      expect(consumedUp.defaultPrevented).toBe(true);
+
+      // An ordinary key afterwards still reports both press and release.
+      simulateKey(container, createKeyEvent('KeyA', 'a'));
+      container.dispatchEvent(
+        new KeyboardEvent('keyup', { code: 'KeyA', key: 'a', bubbles: true, cancelable: true })
+      );
+      expect(dataReceived.length).toBe(2);
+      expect(dataReceived[1]).toContain(':3u');
+
+      handler.dispose();
+      wasmTerm.free();
+    });
+
     test('any-event mouse tracking reports button 35 on hover and deduplicates same-cell motion', () => {
       // The encoder reads mode 1003 / 1006 from the terminal itself.
       const wasmTerm = ghostty.createTerminal(80, 24);
