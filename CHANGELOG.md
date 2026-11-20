@@ -4,7 +4,7 @@
 
 ### Added
 
-- Sextants (U+1FB00–U+1FB3B) and octants (U+1CD00–U+1CDE5) from the Symbols for Legacy Computing blocks are drawn as geometry, like box drawing and block elements, in all three renderers. They tile without seams (sub-cell edges snap to device pixels) and no longer depend on a font that covers them, so `chafa --symbols sextant`/`octant` output renders anywhere. The mapping follows Ghostty's sprite renderer and is checked against Unicode 16.0 names.
+- Sextants (U+1FB00–U+1FB3B) and octants (U+1CD00–U+1CDE5) from the Symbols for Legacy Computing blocks are drawn as geometry, like box drawing and block elements, in all three renderers. They tile without seams (sub-cell edges snap to device pixels) and no longer depend on a font that covers them, so `chafa --symbols sextant`/`octant` output renders anywhere. The eight octant-shaped quarter and eighth blocks that the octant block leaves to other blocks (U+1CEA0, U+1CEA3, U+1CEA8, U+1CEAB, U+1FB82, U+1FB85, U+1FBE6, U+1FBE7) are drawn the same way, so every 2×4 pattern renders without a font. The mapping follows Ghostty's sprite renderer and is checked against Unicode 16.0 names.
 
 ### Changed
 

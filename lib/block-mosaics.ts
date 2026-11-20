@@ -4,6 +4,8 @@
  *
  * - Sextants U+1FB00–U+1FB3B (2×3 grid)
  * - Octants  U+1CD00–U+1CDE5 (2×4 grid, Unicode 16)
+ * - The eight octant-shaped quarter/eighth blocks the octant block omits
+ *   (U+1CEA0/3/8/B, U+1FB82, U+1FB85, U+1FBE6/7)
  *
  * Both blocks omit the patterns Unicode already encodes elsewhere (empty,
  * full, half blocks, quadrants), so the codepoint → pattern mapping skips
@@ -29,6 +31,21 @@ const OCTANT_MASKS = hexBytes(
     'd8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff1f2f3f4f6f7f8f9fbfdfe'
 );
 
+/** The 2×4 patterns the octant block omits because Unicode already had them
+ * elsewhere. Quadrants, halves and U+2582/U+2586 are block elements (drawn
+ * by the renderers' block-element path); these eight are not, and octant
+ * output (e.g. chafa --symbols octant) uses them. Masks as OCTANT_MASKS. */
+const OCTANT_SHAPED = new Map<number, number>([
+  [0x1cea8, 0b00000001], // LEFT HALF UPPER ONE QUARTER BLOCK        (1)
+  [0x1ceab, 0b00000010], // RIGHT HALF UPPER ONE QUARTER BLOCK       (2)
+  [0x1cea3, 0b01000000], // LEFT HALF LOWER ONE QUARTER BLOCK        (7)
+  [0x1cea0, 0b10000000], // RIGHT HALF LOWER ONE QUARTER BLOCK       (8)
+  [0x1fb82, 0b00000011], // UPPER ONE QUARTER BLOCK                  (12)
+  [0x1fbe6, 0b00010100], // MIDDLE LEFT ONE QUARTER BLOCK            (35)
+  [0x1fbe7, 0b00101000], // MIDDLE RIGHT ONE QUARTER BLOCK           (46)
+  [0x1fb85, 0b00111111], // UPPER THREE QUARTERS BLOCK               (123456)
+]);
+
 function hexBytes(hex: string): Uint8Array {
   const out = new Uint8Array(hex.length / 2);
   for (let i = 0; i < out.length; i++) out[i] = Number.parseInt(hex.slice(i * 2, i * 2 + 2), 16);
@@ -47,12 +64,18 @@ export function mosaicPattern(cp: number): { rows: number; mask: number } | null
   if (cp >= OCTANT_MIN && cp <= OCTANT_MAX) {
     return { rows: 4, mask: OCTANT_MASKS[cp - OCTANT_MIN] };
   }
+  const shaped = OCTANT_SHAPED.get(cp);
+  if (shaped !== undefined) return { rows: 4, mask: shaped };
   return null;
 }
 
 /** Whether `cp` is a block mosaic this module draws. */
 export function isBlockMosaic(cp: number): boolean {
-  return (cp >= SEXTANT_MIN && cp <= SEXTANT_MAX) || (cp >= OCTANT_MIN && cp <= OCTANT_MAX);
+  return (
+    (cp >= SEXTANT_MIN && cp <= SEXTANT_MAX) ||
+    (cp >= OCTANT_MIN && cp <= OCTANT_MAX) ||
+    OCTANT_SHAPED.has(cp)
+  );
 }
 
 /** Device pixels per unit of the context's current transform, so cell

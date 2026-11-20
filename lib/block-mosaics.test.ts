@@ -66,8 +66,41 @@ describe('mosaicPattern', () => {
     }
   });
 
+  test('octant-shaped blocks outside the octant block follow their names', () => {
+    expect(mosaicPattern(0x1cea8)).toEqual({ rows: 4, mask: cells('1') }); // LEFT HALF UPPER ONE QUARTER
+    expect(mosaicPattern(0x1ceab)).toEqual({ rows: 4, mask: cells('2') }); // RIGHT HALF UPPER ONE QUARTER
+    expect(mosaicPattern(0x1cea3)).toEqual({ rows: 4, mask: cells('7') }); // LEFT HALF LOWER ONE QUARTER
+    expect(mosaicPattern(0x1cea0)).toEqual({ rows: 4, mask: cells('8') }); // RIGHT HALF LOWER ONE QUARTER
+    expect(mosaicPattern(0x1fb82)).toEqual({ rows: 4, mask: cells('12') }); // UPPER ONE QUARTER
+    expect(mosaicPattern(0x1fbe6)).toEqual({ rows: 4, mask: cells('35') }); // MIDDLE LEFT ONE QUARTER
+    expect(mosaicPattern(0x1fbe7)).toEqual({ rows: 4, mask: cells('46') }); // MIDDLE RIGHT ONE QUARTER
+    expect(mosaicPattern(0x1fb85)).toEqual({ rows: 4, mask: cells('123456') }); // UPPER THREE QUARTERS
+  });
+
+  test('every 2×4 pattern is drawable without a font, by exactly one path', () => {
+    // Quadrant-equivalent patterns (incl. empty, full, halves) plus
+    // U+2582 LOWER ONE QUARTER and U+2586 LOWER THREE QUARTERS are block
+    // elements, drawn by the renderers' U+2580–U+259F path.
+    const blockElements = new Set<number>([cells('78'), cells('345678')]);
+    for (let q = 0; q < 16; q++) {
+      const [tl, tr, bl, br] = [q & 1, (q >> 1) & 1, (q >> 2) & 1, (q >> 3) & 1];
+      blockElements.add(
+        tl | (tr << 1) | (tl << 2) | (tr << 3) | (bl << 4) | (br << 5) | (bl << 6) | (br << 7)
+      );
+    }
+    const owners = new Map<number, number>();
+    const own = (mask: number) => owners.set(mask, (owners.get(mask) ?? 0) + 1);
+    for (const mask of blockElements) own(mask);
+    for (let cp = 0x1cd00; cp <= 0x1cde5; cp++) own(mosaicPattern(cp)!.mask);
+    for (const cp of [0x1cea0, 0x1cea3, 0x1cea8, 0x1ceab, 0x1fb82, 0x1fb85, 0x1fbe6, 0x1fbe7]) {
+      own(mosaicPattern(cp)!.mask);
+    }
+    expect(owners.size).toBe(256);
+    expect([...owners.values()].every((n) => n === 1)).toBe(true);
+  });
+
   test('other codepoints are not mosaics', () => {
-    for (const cp of [0x2588, 0x1faff, 0x1fb3c, 0x1ccff, 0x1cde6, 0x41]) {
+    for (const cp of [0x2588, 0x1faff, 0x1fb3c, 0x1ccff, 0x1cde6, 0x1cea1, 0x1fb83, 0x41]) {
       expect(mosaicPattern(cp)).toBeNull();
       expect(isBlockMosaic(cp)).toBe(false);
     }
