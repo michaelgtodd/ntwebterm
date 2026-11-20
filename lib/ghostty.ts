@@ -50,6 +50,7 @@ import {
   GhosttySelectionGestureGeometryLayout,
   GhosttySelectionLayout,
   GhosttySizeReportSizeLayout,
+  GhosttySnapshotDecoderOption,
   GhosttyStringLayout,
   GhosttyStyleColorLayout,
   GhosttyStyleColorTag,
@@ -522,6 +523,75 @@ export class Ghostty {
     config?: GhosttyTerminalConfig
   ): GhosttyTerminal {
     return new GhosttyTerminal(this.exports, this.memory, cols, rows, config);
+  }
+
+  /**
+   * Restore a terminal from a libghostty-vt snapshot (see
+   * GhosttyTerminal.encodeSnapshot, or ghostty_snapshot_encode in a native
+   * libghostty-vt built from the same source). The snapshot carries the
+   * screens, scrollback, modes, Kitty graphics and any unfinished escape
+   * sequence; `config` (colors, scrollback limit) is applied on top, as for
+   * createTerminal. Throws if the bytes aren't a complete snapshot this
+   * build can read; the snapshot format is versioned separately and both
+   * sides must be built from compatible libghostty-vt sources.
+   */
+  restoreTerminal(
+    data: Uint8Array,
+    config?: GhosttyTerminalConfig,
+    opts: { kittyImageStorageLimit?: number } = {}
+  ): GhosttyTerminal {
+    const ex = this.exports;
+    const buf = ex.ghostty_wasm_alloc(Math.max(1, data.length));
+    if (!buf) throw new Error('Failed to allocate snapshot buffer');
+    const decPtrPtr = ex.ghostty_wasm_alloc_opaque();
+    const termPtrPtr = ex.ghostty_wasm_alloc_opaque();
+    let decoder = 0;
+    let handle = 0;
+    try {
+      new Uint8Array(this.memory.buffer, buf, data.length).set(data);
+      let r = ex.ghostty_snapshot_decoder_new_buf(0, decPtrPtr, buf, data.length);
+      if (r !== GhosttyResult.SUCCESS)
+        throw new Error(`snapshot decoder: ${GhosttyResult[r] ?? r}`);
+      decoder = new DataView(this.memory.buffer).getUint32(decPtrPtr, true);
+      // Compress history as it's restored instead of holding it all
+      // uncompressed (the original may have been compressed).
+      const boolPtr = ex.ghostty_wasm_alloc(1);
+      try {
+        new DataView(this.memory.buffer).setUint8(boolPtr, 1);
+        ex.ghostty_snapshot_decoder_set(
+          decoder,
+          GhosttySnapshotDecoderOption.COMPRESS_HISTORY,
+          boolPtr
+        );
+      } finally {
+        ex.ghostty_wasm_free(boolPtr, 1);
+      }
+      if (opts.kittyImageStorageLimit !== undefined) {
+        const p = ex.ghostty_wasm_alloc(8);
+        try {
+          const v = BigInt(Math.max(0, Math.floor(opts.kittyImageStorageLimit)));
+          new DataView(this.memory.buffer).setBigUint64(p, v, true);
+          ex.ghostty_snapshot_decoder_set(
+            decoder,
+            GhosttySnapshotDecoderOption.KITTY_IMAGE_STORAGE_LIMIT,
+            p
+          );
+        } finally {
+          ex.ghostty_wasm_free(p, 8);
+        }
+      }
+      r = ex.ghostty_snapshot_decoder_decode(decoder, termPtrPtr);
+      if (r !== GhosttyResult.SUCCESS) throw new Error(`snapshot decode: ${GhosttyResult[r] ?? r}`);
+      handle = new DataView(this.memory.buffer).getUint32(termPtrPtr, true);
+      if (!handle) throw new Error('snapshot decode returned no terminal');
+    } finally {
+      if (decoder) ex.ghostty_snapshot_decoder_free(decoder);
+      ex.ghostty_wasm_free_opaque(decPtrPtr);
+      ex.ghostty_wasm_free_opaque(termPtrPtr);
+      ex.ghostty_wasm_free(buf, Math.max(1, data.length));
+    }
+    // The wrapper takes ownership of the handle (and frees it on failure).
+    return new GhosttyTerminal(this.exports, this.memory, 0, 0, config, handle);
   }
 
   static async load(wasmPath?: string): Promise<Ghostty> {
@@ -1328,21 +1398,30 @@ export class GhosttyTerminal {
     memory: WebAssembly.Memory,
     cols: number = 80,
     rows: number = 24,
-    config?: GhosttyTerminalConfig
+    config?: GhosttyTerminalConfig,
+    /** An existing terminal (e.g. restored from a snapshot) to take
+     * ownership of instead of creating one; its own size is used. */
+    adopt?: TerminalHandle
   ) {
     this.exports = exports;
     this.memory = memory;
     this._cols = cols;
     this._rows = rows;
 
-    const termPtrPtr = this.exports.ghostty_wasm_alloc_opaque();
-    if (termPtrPtr === 0) throw new Error('Failed to allocate terminal handle');
-    try {
-      const result = this.exports.ghostty_terminal_new(0, termPtrPtr, cols, rows);
-      if (result !== 0) throw new Error(`ghostty_terminal_new failed: ${result}`);
-      this.handle = new DataView(this.memory.buffer).getUint32(termPtrPtr, true);
-    } finally {
-      this.exports.ghostty_wasm_free_opaque(termPtrPtr);
+    if (adopt) {
+      this.handle = adopt;
+      this._cols = this.tGetU16(TerminalData.COLS);
+      this._rows = this.tGetU16(TerminalData.ROWS);
+    } else {
+      const termPtrPtr = this.exports.ghostty_wasm_alloc_opaque();
+      if (termPtrPtr === 0) throw new Error('Failed to allocate terminal handle');
+      try {
+        const result = this.exports.ghostty_terminal_new(0, termPtrPtr, cols, rows);
+        if (result !== 0) throw new Error(`ghostty_terminal_new failed: ${result}`);
+        this.handle = new DataView(this.memory.buffer).getUint32(termPtrPtr, true);
+      } finally {
+        this.exports.ghostty_wasm_free_opaque(termPtrPtr);
+      }
     }
 
     if (!this.handle) throw new Error('Failed to create terminal');
@@ -1647,12 +1726,52 @@ export class GhosttyTerminal {
     return v;
   }
 
+  private tGetU16(key: number): number {
+    const p = this.exports.ghostty_wasm_alloc(2);
+    this.exports.ghostty_terminal_get(this.handle, key, p);
+    const v = new DataView(this.memory.buffer).getUint16(p, true);
+    this.exports.ghostty_wasm_free(p, 2);
+    return v;
+  }
+
   private tGetU32(key: number): number {
     const p = this.exports.ghostty_wasm_alloc(4);
     this.exports.ghostty_terminal_get(this.handle, key, p);
     const v = new DataView(this.memory.buffer).getUint32(p, true);
     this.exports.ghostty_wasm_free(p, 4);
     return v;
+  }
+
+  /** Kitty image storage limit in bytes (see setKittyImageStorageLimit). */
+  get kittyImageStorageLimit(): number {
+    return this.imageStorageLimit;
+  }
+
+  /**
+   * Encode the terminal's complete state as a libghostty-vt snapshot
+   * (restore it with Ghostty.restoreTerminal / Terminal.restoreSnapshot).
+   */
+  encodeSnapshot(): Uint8Array {
+    const outPtrPtr = this.exports.ghostty_wasm_alloc(8);
+    try {
+      const r = this.exports.ghostty_snapshot_encode_alloc(
+        this.handle,
+        0,
+        outPtrPtr,
+        outPtrPtr + 4
+      );
+      if (r !== GhosttyResult.SUCCESS) throw new Error(`snapshot encode: ${GhosttyResult[r] ?? r}`);
+      const view = new DataView(this.memory.buffer);
+      const ptr = view.getUint32(outPtrPtr, true);
+      const len = view.getUint32(outPtrPtr + 4, true);
+      try {
+        return new Uint8Array(this.memory.buffer, ptr, len).slice();
+      } finally {
+        if (ptr !== 0) this.exports.ghostty_free(0, ptr, len);
+      }
+    } finally {
+      this.exports.ghostty_wasm_free(outPtrPtr, 8);
+    }
   }
 
   get cols(): number {

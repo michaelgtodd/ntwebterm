@@ -1215,6 +1215,80 @@ export class Terminal implements ITerminalCore {
   /**
    * Reset terminal state
    */
+  /**
+   * Replace the terminal's entire state (screens, scrollback, modes, Kitty
+   * graphics, an unfinished escape sequence) with a libghostty-vt snapshot,
+   * e.g. one encoded by a server-side libghostty-vt that has been following
+   * the same program. The terminal keeps its current size: the restored
+   * state is reflowed to it. Writes after this continue where the snapshot
+   * left off. Throws (leaving the terminal unchanged) if the bytes can't be
+   * restored, e.g. a snapshot from an incompatible libghostty-vt version.
+   */
+  restoreSnapshot(data: Uint8Array): void {
+    this.assertOpen();
+    const old = this.wasmTerm!;
+    if (old.deferWhileWriting(() => this.restoreSnapshot(data))) return;
+
+    const next = this.ghostty!.restoreTerminal(data, this.buildWasmConfig(), {
+      kittyImageStorageLimit: old.kittyImageStorageLimit || undefined,
+    });
+    if (old.kittyImageStorageLimit) next.setKittyImageStorageLimit(old.kittyImageStorageLimit);
+    if (next.cols !== this.cols || next.rows !== this.rows) next.resize(this.cols, this.rows);
+
+    const wasAlternate = old.isAlternateScreen();
+    this.wasmTerm = next;
+    this.wireWasmCallbacks();
+    this.updateWasmPixelSize();
+
+    // Per-screen UI state, as in reset().
+    if (this.syncOutputTimer !== undefined) clearTimeout(this.syncOutputTimer);
+    this.syncOutputTimer = undefined;
+    this.syncOutputDeadline = undefined;
+    if (this.scrollAnimationFrame) {
+      cancelAnimationFrame(this.scrollAnimationFrame);
+      this.scrollAnimationFrame = undefined;
+      this.scrollAnimationStartTime = undefined;
+      this.scrollAnimationStartY = undefined;
+    }
+    this.viewportY = 0;
+    this.targetViewportY = 0;
+    this.altWheelRemainder = 0;
+    this.lastCursorX = 0;
+    this.lastCursorY = 0;
+    this.lastCursorStyle = undefined;
+    this.focusEventsOn = next.hasFocusEvents();
+
+    // The selection manager holds the WASM terminal: rebuild it, as the
+    // renderer-swap path does.
+    this.selectionManager?.dispose();
+    this.selectionManager = new SelectionManager(
+      this,
+      this.renderer!,
+      next,
+      this.textarea!,
+      this.bidiMapper
+    );
+    this.renderer!.setSelectionManager(this.selectionManager);
+    this.selectionManager.onSelectionChange(() => {
+      this.selectionChangeEmitter.fire();
+      this.requestRender();
+    });
+    this.linkDetector?.invalidateCache();
+
+    old.free();
+
+    if (wasAlternate !== next.isAlternateScreen()) {
+      this.buffer._fireBufferChange(this.buffer.active);
+    }
+    const title = next.getTitle?.() ?? '';
+    if (title !== this.currentTitle) {
+      this.currentTitle = title;
+      this.titleChangeEmitter.fire(title);
+    }
+    this.renderer!.invalidate();
+    this.requestRender();
+  }
+
   reset(): void {
     this.assertOpen();
     if (this.wasmTerm!.deferWhileWriting(() => this.reset())) return;

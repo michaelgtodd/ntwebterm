@@ -258,6 +258,23 @@ export interface GhosttyWasmExports extends WebAssembly.Exports {
     terminal: TerminalHandle
   ): number;
   ghostty_formatter_free(formatter: number): void;
+
+  // Snapshots (ghostty/vt/snapshot.h)
+  ghostty_snapshot_encode_alloc(
+    terminal: TerminalHandle,
+    allocator: number,
+    outPtrPtr: number,
+    outLenPtr: number
+  ): number;
+  ghostty_snapshot_decoder_new_buf(
+    allocator: number,
+    decoderPtrPtr: number,
+    ptr: number,
+    len: number
+  ): number;
+  ghostty_snapshot_decoder_set(decoder: number, option: number, valuePtr: number): number;
+  ghostty_snapshot_decoder_decode(decoder: number, terminalPtrPtr: number): number;
+  ghostty_snapshot_decoder_free(decoder: number): void;
   ghostty_formatter_set(formatter: number, option: number, valuePtr: number): number;
   ghostty_formatter_format_alloc(
     formatter: number,
