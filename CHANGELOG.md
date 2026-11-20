@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- Sextants (U+1FB00–U+1FB3B) and octants (U+1CD00–U+1CDE5) from the Symbols for Legacy Computing blocks are drawn as geometry, like box drawing and block elements, in all three renderers. They tile without seams (sub-cell edges snap to device pixels) and no longer depend on a font that covers them, so `chafa --symbols sextant`/`octant` output renders anywhere. The mapping follows Ghostty's sprite renderer and is checked against Unicode 16.0 names.
+
 ### Changed
 
 - Releases are published to npmjs.com as `ntwebterm` and to GitHub Packages as `@nimbleterminal/ntwebterm` by the manually run `publish` workflow. It publishes the tag's release tarball unchanged after checking it against `SHA256SUMS`, authenticates to npmjs.com with trusted publishing (no stored token; npm adds a provenance attestation) and to GitHub Packages with the workflow token, and skips a version a registry already has. The README's installation section describes both registries.

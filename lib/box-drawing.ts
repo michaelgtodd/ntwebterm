@@ -1,3 +1,5 @@
+import { drawBlockMosaic, isBlockMosaic } from './block-mosaics';
+
 /** Cell-filling box glyphs, shared by Canvas2D and the GPU glyph atlas.
  * Font ink follows the font's advance/line box, not our rounded, emoji-safe
  * cell metrics. Never scale ordinary text to compensate for that difference.
@@ -48,6 +50,11 @@ export function drawBoxDrawing(
   height: number,
   fontSize: number
 ): boolean {
+  // Legacy-computing mosaics are astral (a surrogate pair in UTF-16).
+  const cp = grapheme.codePointAt(0);
+  if (cp !== undefined && grapheme.length === 2 && isBlockMosaic(cp)) {
+    return drawBlockMosaic(ctx, cp, x, y, width, height);
+  }
   if (grapheme.length !== 1) return false;
   const box = boxes.get(grapheme.charCodeAt(0));
   if (!box) return false;
