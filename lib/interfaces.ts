@@ -56,6 +56,16 @@ export interface ITerminalOptions {
    */
   clipboardRead?: ClipboardReadHandler | null;
   /**
+   * What happens to the terminal's answers to program queries (device
+   * attributes, cursor position, mode reports, color queries...).
+   * 'send' (default) emits them through onData like typed input. 'drop'
+   * discards them: use it when something else answers the program, e.g. a
+   * server-side terminal that several browsers view at once, where each
+   * browser answering would give the program duplicate (or, for a viewer at
+   * a different size, wrong) replies. Pastes and key input are unaffected.
+   */
+  terminalResponses?: 'send' | 'drop';
+  /**
    * Pastes that could inject commands: a line terminator outside bracketed
    * paste, or the bracketed paste end marker. `true` (default) pastes them
    * as xterm.js does, `false` drops them, and a callback may confirm with
