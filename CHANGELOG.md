@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed
+
+- `FitAddon` no longer drops a resize that arrives within 50 ms of a fit. `fit()` and `ResizeObserver` events during that settle window used to be ignored outright, so a container that changed size right after a fit (the viewport settling after page load, dragging a splitter, an on-screen keyboard opening) left the terminal at the old size, with its bottom rows hidden. Requests in the window are now deferred and applied when it ends.
+
 ### Changed
 
 - Releases are published to npmjs.com as `ntwebterm` and to GitHub Packages as `@nimbleterminal/ntwebterm` by the manually run `publish` workflow. It publishes the tag's release tarball unchanged after checking it against `SHA256SUMS`, authenticates to npmjs.com with trusted publishing (no stored token; npm adds a provenance attestation) and to GitHub Packages with the workflow token, and skips a version a registry already has. The README's installation section describes both registries.

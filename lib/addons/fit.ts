@@ -44,6 +44,10 @@ export class FitAddon implements ITerminalAddon {
   private _lastCols?: number;
   private _lastRows?: number;
   private _isResizing: boolean = false;
+  // A fit() requested while _isResizing; run once the settle window ends
+  // instead of dropping it (the container may have changed meanwhile).
+  private _pendingFit = false;
+  private _settleTimer?: ReturnType<typeof setTimeout>;
 
   /**
    * Activate the addon (called by Terminal.loadAddon)
@@ -67,6 +71,12 @@ export class FitAddon implements ITerminalAddon {
       clearTimeout(this._resizeDebounceTimer);
       this._resizeDebounceTimer = undefined;
     }
+    if (this._settleTimer) {
+      clearTimeout(this._settleTimer);
+      this._settleTimer = undefined;
+    }
+    this._pendingFit = false;
+    this._isResizing = false;
 
     // Clear stored dimensions
     this._lastCols = undefined;
@@ -82,8 +92,11 @@ export class FitAddon implements ITerminalAddon {
    * Does nothing if dimensions cannot be calculated or haven't changed.
    */
   public fit(): void {
-    // Prevent re-entrant calls during resize
+    // Don't re-enter during a resize, but don't lose the request either: the
+    // container can change size inside the settle window (viewport settling
+    // after load, a splitter drag, an on-screen keyboard opening).
     if (this._isResizing) {
+      this._pendingFit = true;
       return;
     }
 
@@ -119,9 +132,15 @@ export class FitAddon implements ITerminalAddon {
         terminal.resize(dims.cols, dims.rows);
       }
     } finally {
-      // Clear flag after a short delay to allow DOM to settle
-      setTimeout(() => {
+      // Clear flag after a short delay to allow DOM to settle, then apply
+      // any fit requested in the meantime.
+      this._settleTimer = setTimeout(() => {
+        this._settleTimer = undefined;
         this._isResizing = false;
+        if (this._pendingFit) {
+          this._pendingFit = false;
+          this.fit();
+        }
       }, 50);
     }
   }
@@ -216,10 +235,8 @@ export class FitAddon implements ITerminalAddon {
 
     // Create ResizeObserver that watches for external size changes
     this._resizeObserver = new ResizeObserver((entries) => {
-      // Ignore resize events while we're actively resizing
-      if (this._isResizing) {
-        return;
-      }
+      // Not ignored while a resize is settling: fit() defers itself then, and
+      // its "dimensions unchanged" check already prevents feedback loops.
 
       // Only trigger if the observed element's content rect changed
       const entry = entries[0];

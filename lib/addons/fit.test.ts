@@ -234,3 +234,80 @@ describe('Dimension Calculation', () => {
     expect(dims).toEqual({ cols: 88, rows: 24 });
   });
 });
+
+describe('Resizes during the settle window', () => {
+  // A terminal whose container height we can change between fits.
+  function setup() {
+    const el = document.createElement('div');
+    let height = 880;
+    Object.defineProperty(el, 'clientWidth', { value: 915, configurable: true });
+    Object.defineProperty(el, 'clientHeight', { get: () => height, configurable: true });
+    const term = {
+      cols: 80,
+      rows: 24,
+      element: el,
+      renderer: { getMetrics: () => ({ width: 9, height: 22, baseline: 16 }) },
+      resize(cols: number, rows: number) {
+        term.cols = cols;
+        term.rows = rows;
+      },
+    };
+    const addon = new FitAddon();
+    addon.activate(term as any);
+    const setHeight = (h: number) => {
+      height = h;
+    };
+    return { addon, term, setHeight };
+  }
+  const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  test('a fit() requested while settling is applied afterwards, not dropped', async () => {
+    const { addon, term, setHeight } = setup();
+    addon.fit();
+    expect(term.rows).toBe(40); // 880 / 22
+
+    // The viewport shrinks right after load (e.g. browser chrome settling).
+    setHeight(857);
+    addon.fit();
+    expect(term.rows).toBe(40); // deferred while settling
+
+    await wait(80);
+    expect(term.rows).toBe(38); // floor(857 / 22): the last row is visible
+    addon.dispose();
+  });
+
+  test('a ResizeObserver event during the settle window still refits', async () => {
+    const original = globalThis.ResizeObserver;
+    let notify: (() => void) | undefined;
+    globalThis.ResizeObserver = class {
+      constructor(cb: ResizeObserverCallback) {
+        notify = () => cb([{} as ResizeObserverEntry], this as any);
+      }
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    } as any;
+    try {
+      const { addon, term, setHeight } = setup();
+      addon.observeResize();
+      addon.fit();
+      setHeight(857);
+      notify!(); // arrives inside the 50 ms settle window
+      await wait(200); // past the observer's 100 ms debounce
+      expect(term.rows).toBe(38);
+      addon.dispose();
+    } finally {
+      globalThis.ResizeObserver = original;
+    }
+  });
+
+  test('dispose() cancels a deferred fit', async () => {
+    const { addon, term, setHeight } = setup();
+    addon.fit();
+    setHeight(500);
+    addon.fit();
+    addon.dispose();
+    await wait(80);
+    expect(term.rows).toBe(40);
+  });
+});
