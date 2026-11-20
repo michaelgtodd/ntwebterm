@@ -266,6 +266,10 @@ export class InputHandler {
   private wheelListener: ((e: WheelEvent) => void) | null = null;
   private isComposing = false;
   private isDisposed = false;
+  // Physical keys (KeyboardEvent.code) whose keydown the custom key handler
+  // consumed. Their keyup must be swallowed too, or a Kitty REPORT_EVENTS
+  // app sees a release for a press it never received.
+  private customHandledCodes = new Set<string>();
   private mouseButtonsPressed = 0; // Bit per DOM button index, for drag motion reports
   private lastKeyDownData: string | null = null;
   private lastKeyDownTime = 0;
@@ -531,6 +535,7 @@ export class InputHandler {
       if (handled) {
         // Custom handler consumed the event
         event.preventDefault();
+        if (event.code) this.customHandledCodes.add(event.code);
         return;
       }
     }
@@ -731,6 +736,11 @@ export class InputHandler {
    */
   private handleKeyUp(event: KeyboardEvent): void {
     if (this.isDisposed) return;
+    // The custom handler consumed this key's press, so drop its release too.
+    if (event.code && this.customHandledCodes.delete(event.code)) {
+      event.preventDefault();
+      return;
+    }
     if (this.isComposing || event.isComposing || event.keyCode === 229) {
       return;
     }
