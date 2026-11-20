@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- `Terminal.restoreSnapshot(bytes)` replaces a terminal's whole state (screens, scrollback, modes, Kitty graphics, an unfinished escape sequence) with a libghostty-vt snapshot, keeping the terminal's size and reflowing to it; writes afterwards continue where the snapshot left off, and a snapshot that can't be restored throws and leaves the terminal unchanged. `GhosttyTerminal.encodeSnapshot()` and `Ghostty.restoreTerminal()` are the lower-level halves. A server-side libghostty-vt built from the same source can follow a program's output and hand a reconnecting browser an exact copy of its screen instead of a raw replay.
+
 ### Changed
 
 - Releases are published to npmjs.com as `ntwebterm` and to GitHub Packages as `@nimbleterminal/ntwebterm` by the manually run `publish` workflow. It publishes the tag's release tarball unchanged after checking it against `SHA256SUMS`, authenticates to npmjs.com with trusted publishing (no stored token; npm adds a provenance attestation) and to GitHub Packages with the workflow token, and skips a version a registry already has. The README's installation section describes both registries.
